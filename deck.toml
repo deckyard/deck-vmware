@@ -1,0 +1,19 @@
+[package]
+name = "@deckyard/vmware"
+version = "0.1.0"
+description = "A client for the vSphere Automation REST API of vCenter"
+license = "LGPL-3.0-only"
+authors = ["mplx <mplx@jennifer-lang.dev>"]
+# The deck talks to vCenter over HTTPS, so it opens sockets. No `exec`: it
+# shells out to nothing. No `sql`.
+capabilities = ["net"]
+keywords = ["vmware", "vsphere", "vcenter", "esxi", "virtualization", "api"]
+
+[package.urls]
+deck = "https://raw.githubusercontent.com/deckyard/deck-vmware/main/deck.toml"
+homepage = "https://github.com/deckyard/deck-vmware"
+manual = "https://deckyard.github.io/deck-vmware/"
+
+# Only the default binary: `jennifer-tiny` has no `net` capability.
+[engines]
+jennifer = ">=0.25.0"

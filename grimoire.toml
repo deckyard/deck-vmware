@@ -1,0 +1,31 @@
+[book]
+title = "@deckyard/vmware"
+description = "A client for the vSphere Automation REST API of vCenter"
+language = "en"
+src = "docs"
+
+[build]
+out = "site"
+clean = true
+jobs = 0
+
+[html]
+theme = "nordic"
+mode = "auto"
+navPosition = "left"
+tocPosition = "right"
+tocDepth = 3
+sectionNumbers = true
+titleUrl = "https://deckyard.github.io/deck-vmware/"
+repoUrl = "https://github.com/deckyard/deck-vmware"
+repoLabel = "Source"
+editUrl = "https://github.com/deckyard/deck-vmware/edit/main/docs/{path}"
+
+[highlight]
+enabled = true
+
+[search]
+enabled = true
+
+[pdf]
+enabled = false
