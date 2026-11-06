@@ -904,7 +904,9 @@ func testGuestAddresses() {
             '[{"mac_address":"m","nic":"4000",' +
                 '"ip":{"ip_addresses":[{"ip_address":"10.0.0.8","prefix_length":24},' +
                 '{"ip_address":"FE80::1","prefix_length":64},{"ip_address":"2001:db8::8",' +
-                '"prefix_length":64}]}}]')
+                '"prefix_length":64},{"ip_address":"169.254.7.8","prefix_length":16},' +
+                '{"ip_address":"feb0::8","prefix_length":64},{"ip_address":"127.0.1.1",' +
+                '"prefix_length":8}]}}]')
     ]);
     def ips as list of string init guestAddresses(sessionClient($f), "vm-42");
     finish($f);

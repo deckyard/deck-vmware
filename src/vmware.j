@@ -2256,8 +2256,8 @@ export func guestInterfaces(c as Client, vm as string) {
 }
 
 /**
- * The guest's IP addresses, without loopback and link-local ones and
- * without prefix.
+ * The guest's IP addresses, without prefix and without loopback
+ * (127.0.0.0/8, ::1) and link-local ones (169.254.0.0/16, fe80::/10).
  *
  * @param c {Client} the client
  * @param vm {string} the VM id
@@ -2269,13 +2269,9 @@ export func guestAddresses(c as Client, vm as string) {
     for (def i in guestInterfaces($c, $vm)) {
         for (def a in $i.addresses) {
             def ip as string init strings.split($a, "/")[0];
-            def low as string init strings.lower($ip);
-            if (strings.startsWith($ip, "127.") or $ip == "::1" or strings.startsWith(
-                $low,
-                "fe80:")) {
-                continue;
+            if (not isLocalAddress($ip)) {
+                $out[] = $ip;
             }
-            $out[] = $ip;
         }
     }
     return $out;
