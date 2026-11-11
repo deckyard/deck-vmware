@@ -12,6 +12,14 @@ deleting VMs, tasks, guest customization, CPU, memory, disks and NICs,
 tags, VM power, the guest's addresses and identity, and running programs
 in the guest.
 
+**Infrastructure as Code (IaC).** VMs, their hardware, guest customization
+and tags can be provisioned from a Jennifer program kept in version control
+and reviewed like any other code. The create, clone and deploy verbs are not
+idempotent, and `addDisk` and `addNic` add a device on every run. A
+re-runnable script lists what exists first (`vms`, `disks`, `nics`, `tags`);
+`setCpu` and `setMemory` can be applied again. There is no plan or diff step,
+and the deck does not detect drift.
+
 ## Conventions
 
 Snippets assume this import:
@@ -67,5 +75,5 @@ are never retried; `withRetries` retries only GETs answered 429 or 5xx.
 
 ## Requirements
 
-Jennifer 0.25.0 or newer, default `jennifer` binary: the deck needs the `net`
+Jennifer 0.26.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks.
