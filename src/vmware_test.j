@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.25.0
+# pragma-jennifer-version: >=0.26.0
 
 /**
  * White-box tests for vmware: jennifer test src/vmware_test.j
@@ -85,7 +85,7 @@ func serve(srv as httpd.Server, replies as list of Reply) {
             auth: httpd.header($req, "Authorization"),
             session: httpd.header($req, SESSION_HEADER),
             contentType: httpd.header($req, "Content-Type"),
-            body: convert.stringFromBytes(httpd.body($req), "utf-8")
+            body: convert.stringFromBytes("utf-8", httpd.body($req))
         };
         httpd.respond($req, $r.status, $r.body);
     }
@@ -192,7 +192,7 @@ func testBuilders() {
     def c as Client init client("vc");
     testing.assertEqual($c.session, "");
     testing.assertEqual(withInsecure($c).tls.skipVerify, true);
-    def pem as bytes init convert.bytesFromString("-----BEGIN CERTIFICATE-----", "utf-8");
+    def pem as bytes init convert.bytesFromString("utf-8", "-----BEGIN CERTIFICATE-----");
     def trusted as Client init withCaCert(withInsecure($c), $pem);
     testing.assertEqual($trusted.tls.skipVerify, false);
     testing.assertEqual($trusted.tls.caCert, $pem);
