@@ -16,7 +16,9 @@
  * `login` opens a session with a user name and password; the session id
  * rides along on every request until `logout`. vCenter usually presents a
  * certificate from its own CA (VMCA): trust it with `withCaCert`, or turn
- * checking off with `withInsecure`. Every failure is `Error{kind: "vmware"}`.
+ * checking off with `withInsecure`. Every failure is a `VmwareError` (kind
+ * `"vmware"`) carrying the HTTP `status` vCenter answered; a reply over its
+ * size cap is kind `"limit"`.
  *
  * @module vmware
  * @see https://developer.broadcom.com/xapis/vsphere-automation-api/latest/
@@ -32,7 +34,6 @@
 use convert;
 use json;
 use lists;
-use regex;
 use strings;
 use time;
 import "http.j" as http;
@@ -410,13 +411,42 @@ export def struct GuestProcess {
 };
 
 /**
+ * A failed request or a refused value. Every error of kind `"vmware"` is one,
+ * so its fields are safe to read once the kind matches.
+ *
+ * @field kind {string} always `"vmware"` (`ERROR_KIND`)
+ * @field message {string} `vmware: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>`
+ * @field status {int} the HTTP status vCenter answered (400, 401, 403, 404, 500, ...); 0 when no answer was read or the failure is a local check
+ */
+export def struct VmwareError {
+    kind as string,
+    message as string,
+    status as int
+};
+
+/**
  * Raise a deck error.
  *
  * @param message {string} what went wrong
- * @throws {Error} always, with `kind` `"vmware"`
+ * @throws {VmwareError} always, with `kind` `"vmware"` and status 0
  */
 func fail(message as string) {
-    throw Error{kind: ERROR_KIND, message: "vmware: " + $message};
+    failStatus($message, 0);
+}
+
+# failStatus throws the VmwareError of a refused request, with its status.
+func failStatus(message as string, status as int) {
+    throw VmwareError{kind: ERROR_KIND, message: "vmware: " + $message, status: $status};
+}
+
+# failTransport throws the error of a request that got no usable answer: a
+# reached cap (an `http` body cap) stays kind "limit", anything else is a
+# VmwareError; the message is `vmware: <verb> <path>: <cause>` either way.
+func failTransport(what as string, e as Error) {
+    if ($e.kind == "limit") {
+        throw Error{kind: "limit", message: "vmware: " + $what + ": " + $e.message};
+    }
+    fail($what + ": " + $e.message);
 }
 
 /**
@@ -452,7 +482,7 @@ func baseUrl(address as string) {
  *
  * @param address {string} host name, `host:port` or a full `https://` URL
  * @return {Client} the client; full certificate checking, 1 s polling
- * @throws {Error} kind `"vmware"` when the address is empty
+ * @throws {VmwareError} kind `"vmware"` when the address is empty
  */
 export func client(address as string) {
     def c as Client;
@@ -543,7 +573,7 @@ export func withPollInterval(c as Client, ms as int) {
  * @param username {string} e.g. `administrator@vsphere.local`
  * @param password {string} the password
  * @return {Client} the copy holding the session id
- * @throws {Error} kind `"vmware"` when the login is refused
+ * @throws {VmwareError} kind `"vmware"` when the login is refused
  */
 export func login(c as Client, username as string, password as string) {
     def anon as Client init $c;
@@ -565,7 +595,7 @@ export func login(c as Client, username as string, password as string) {
  *
  * @param c {Client} a client holding a session
  * @return {Client} the copy without it
- * @throws {Error} kind `"vmware"` when the client has no session, or as `call`
+ * @throws {VmwareError} kind `"vmware"` when the client has no session, or as `call`
  */
 export func logout(c as Client) {
     if ($c.session == "") {
@@ -601,7 +631,7 @@ export func query(params as map of string to list of string) {
  * Refuse a path that could send the session somewhere else.
  *
  * @param path {string} an API path such as `/api/vcenter/vm?names=web`
- * @throws {Error} kind `"vmware"` unless the path starts with one `/` and has
+ * @throws {VmwareError} kind `"vmware"` unless the path starts with one `/` and has
  *   no `..`, `#` or `//`, nor a second `?`
  */
 func ensurePath(path as string) {
@@ -653,7 +683,7 @@ func send(
     try {
         $r = http.send($method, $c.url + $path, $headers, $body, $o);
     } catch (e) {
-        fail($method + " " + $path + ": " + $e.message);
+        failTransport($method + " " + $path, $e);
     }
     return decodeReply($r, $method + " " + $path);
 }
@@ -667,7 +697,7 @@ func send(
  */
 func decodeReply(r as http.Response, what as string) {
     if ($r.status < 200 or $r.status >= 300) {
-        fail($what + ": " + failureText($r));
+        failStatus($what + ": " + failureText($r), $r.status);
     }
     if (strings.trim($r.body) == "") {
         return json.decode("null");
@@ -706,7 +736,7 @@ func getMany(c as Client, paths as list of string) {
     try {
         $s = http.connect($c.url, $o);
     } catch (e) {
-        fail("GET " + $paths[0] + ": " + $e.message);
+        failTransport("GET " + $paths[0], $e);
     }
     for (def path in $paths) {
         def ex as http.Exchange;
@@ -714,7 +744,7 @@ func getMany(c as Client, paths as list of string) {
             $ex = http.exchange($s, "GET", $path, $headers, "");
         } catch (e) {
             http.close($s);
-            fail("GET " + $path + ": " + $e.message);
+            failTransport("GET " + $path, $e);
         }
         $s = $ex.session;
         try {
@@ -751,7 +781,7 @@ func detailPaths(prefix as string, ids as list of string) {
  * @param path {string} the path, `/api/...`, with any query string (see `query`)
  * @param body {json.Value} the request body; JSON `null` sends none
  * @return {json.Value} the reply; JSON `null` for an empty one (204)
- * @throws {Error} kind `"vmware"` on a bad path, a network failure or a reply
+ * @throws {VmwareError} kind `"vmware"` on a bad path, a network failure or a reply
  *   that is not 2xx; the message names the status, vSphere's error type and
  *   its message
  */
@@ -773,7 +803,7 @@ export func call(c as Client, method as string, path as string, body as json.Val
  * @param c {Client} the client
  * @param path {string} the path, with any query string
  * @return {json.Value} the reply
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func get(c as Client, path as string) {
     return send($c, "GET", $path, {}, "");
@@ -786,7 +816,7 @@ export func get(c as Client, path as string) {
  * @param path {string} the path, with any query string
  * @param body {json.Value} the request body; JSON `null` sends none
  * @return {json.Value} the reply; often the new object's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func post(c as Client, path as string, body as json.Value) {
     return call($c, "POST", $path, $body);
@@ -799,7 +829,7 @@ export func post(c as Client, path as string, body as json.Value) {
  * @param path {string} the path, with any query string
  * @param body {json.Value} the request body
  * @return {json.Value} the reply
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func put(c as Client, path as string, body as json.Value) {
     return call($c, "PUT", $path, $body);
@@ -812,7 +842,7 @@ export func put(c as Client, path as string, body as json.Value) {
  * @param path {string} the path, with any query string
  * @param body {json.Value} the fields to change
  * @return {json.Value} the reply
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func patch(c as Client, path as string, body as json.Value) {
     return call($c, "PATCH", $path, $body);
@@ -824,7 +854,7 @@ export func patch(c as Client, path as string, body as json.Value) {
  * @param c {Client} the client
  * @param path {string} the path, with any query string
  * @return {json.Value} the reply
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func delete(c as Client, path as string) {
     return send($c, "DELETE", $path, {}, "");
@@ -985,7 +1015,7 @@ func items(v as json.Value) {
  *
  * @param id {string} an object id such as `vm-42`
  * @return {string} the id, percent-encoded
- * @throws {Error} kind `"vmware"` when the id is empty
+ * @throws {VmwareError} kind `"vmware"` when the id is empty
  */
 func segment(id as string) {
     if (strings.trim($id) == "") {
@@ -999,7 +1029,7 @@ func segment(id as string) {
  *
  * @param c {Client} the client
  * @return {Version} the version
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func version(c as Client) {
     def d as json.Value init get($c, "/api/appliance/system/version");
@@ -1037,7 +1067,7 @@ func vmQuery(f as VmFilter) {
  * @param c {Client} the client
  * @param filter {VmFilter} which VMs; the zero `VmFilter` for all
  * @return {list of VmSummary} the VMs, in vCenter's order
- * @throws {Error} kind `"vmware"` as `call`; vCenter refuses more than 4000
+ * @throws {VmwareError} kind `"vmware"` as `call`; vCenter refuses more than 4000
  *   VMs with `UNABLE_TO_ALLOCATE_RESOURCE`, so narrow the filter
  */
 export func vms(c as Client, filter as VmFilter) {
@@ -1061,7 +1091,7 @@ export func vms(c as Client, filter as VmFilter) {
  * @param c {Client} the client
  * @param name {string} the exact name
  * @return {VmSummary} the VM
- * @throws {Error} kind `"vmware"` when no VM or several VMs have the name
+ * @throws {VmwareError} kind `"vmware"` when no VM or several VMs have the name
  */
 export func vmByName(c as Client, name as string) {
     def f as VmFilter;
@@ -1083,7 +1113,7 @@ export func vmByName(c as Client, name as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {json.Value} the VM's description, vSphere's keys as they are
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func vm(c as Client, vm as string) {
     return get($c, "/api/vcenter/vm/" + segment($vm));
@@ -1121,7 +1151,7 @@ func placementJson(p as Placement, withDatastore as bool) {
  *
  * @param spec {VmSpec} the VM
  * @return {json.Value} the body of `POST /api/vcenter/vm`
- * @throws {Error} kind `"vmware"` when the name or guest OS is empty
+ * @throws {VmwareError} kind `"vmware"` when the name or guest OS is empty
  */
 export func createSpec(spec as VmSpec) {
     if ($spec.name == "" or $spec.guestOs == "") {
@@ -1166,7 +1196,7 @@ export func createSpec(spec as VmSpec) {
  * @param c {Client} the client
  * @param spec {VmSpec} the VM
  * @return {string} the new VM's id
- * @throws {Error} kind `"vmware"` as `createSpec` and `call`
+ * @throws {VmwareError} kind `"vmware"` as `createSpec` and `call`
  */
 export func createVm(c as Client, spec as VmSpec) {
     return createVmFrom($c, createSpec($spec));
@@ -1179,7 +1209,7 @@ export func createVm(c as Client, spec as VmSpec) {
  * @param c {Client} the client
  * @param body {json.Value} the body, e.g. from `createSpec`
  * @return {string} the new VM's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func createVmFrom(c as Client, body as json.Value) {
     return idOf(post($c, "/api/vcenter/vm", $body), "createVm");
@@ -1211,7 +1241,7 @@ func idOf(v as json.Value, what as string) {
  * @param placement {Placement} where it goes; empty fields keep the source's
  * @param powerOn {bool} power it on when done
  * @return {string} the new VM's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func cloneVm(
     c as Client,
@@ -1229,7 +1259,7 @@ export func cloneVm(
  * @param c {Client} the client
  * @param name {string} the item's name
  * @return {string} its id
- * @throws {Error} kind `"vmware"` when no item or several items have the name
+ * @throws {VmwareError} kind `"vmware"` when no item or several items have the name
  */
 export func findLibraryItem(c as Client, name as string) {
     def body as json.Value init json.set(json.map(), "/name", $name);
@@ -1259,7 +1289,7 @@ export func findLibraryItem(c as Client, name as string) {
  * @param placement {Placement} where it goes; `datastore` holds its disks
  * @param powerOn {bool} power it on when done
  * @return {string} the new VM's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func deployTemplate(
     c as Client,
@@ -1286,7 +1316,7 @@ export func deployTemplate(
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing; the VM is gone when it returns
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func deleteVm(c as Client, vm as string) {
     delete($c, "/api/vcenter/vm/" + segment($vm));
@@ -1299,7 +1329,7 @@ export func deleteVm(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {string} `POWERED_ON`, `POWERED_OFF` or `SUSPENDED`
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func powerState(c as Client, vm as string) {
     return field(get($c, "/api/vcenter/vm/" + segment($vm) + "/power"), "/state");
@@ -1330,7 +1360,7 @@ func powerAction(c as Client, vm as string, scope as string, action as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing; the VM is on when it returns
- * @throws {Error} kind `"vmware"` as `call`; `ALREADY_IN_DESIRED_STATE` when it is on
+ * @throws {VmwareError} kind `"vmware"` as `call`; `ALREADY_IN_DESIRED_STATE` when it is on
  */
 export func powerOn(c as Client, vm as string) {
     return powerAction($c, $vm, "power", "start");
@@ -1342,7 +1372,7 @@ export func powerOn(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func powerOff(c as Client, vm as string) {
     return powerAction($c, $vm, "power", "stop");
@@ -1354,7 +1384,7 @@ export func powerOff(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func suspend(c as Client, vm as string) {
     return powerAction($c, $vm, "power", "suspend");
@@ -1366,7 +1396,7 @@ export func suspend(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func reset(c as Client, vm as string) {
     return powerAction($c, $vm, "power", "reset");
@@ -1379,7 +1409,7 @@ export func reset(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` without Tools
+ * @throws {VmwareError} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` without Tools
  */
 export func shutdownGuest(c as Client, vm as string) {
     return powerAction($c, $vm, "guest/power", "shutdown");
@@ -1391,7 +1421,7 @@ export func shutdownGuest(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func rebootGuest(c as Client, vm as string) {
     return powerAction($c, $vm, "guest/power", "reboot");
@@ -1403,7 +1433,7 @@ export func rebootGuest(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {GuestIdentity} the identity
- * @throws {Error} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` while
+ * @throws {VmwareError} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` while
  *   Tools is not running
  */
 export func guestIdentity(c as Client, vm as string) {
@@ -1422,7 +1452,7 @@ export func guestIdentity(c as Client, vm as string) {
  *
  * @param c {Client} the client
  * @return {list of Host} the hosts
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func hosts(c as Client) {
     def d as json.Value init get($c, "/api/vcenter/host");
@@ -1443,7 +1473,7 @@ export func hosts(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Cluster} the clusters
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func clusters(c as Client) {
     def d as json.Value init get($c, "/api/vcenter/cluster");
@@ -1464,7 +1494,7 @@ export func clusters(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Datastore} the datastores
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func datastores(c as Client) {
     def d as json.Value init get($c, "/api/vcenter/datastore");
@@ -1505,7 +1535,7 @@ func itemsFrom(d as json.Value, idKey as string) {
  *
  * @param c {Client} the client
  * @return {list of Item} the datacenters
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func datacenters(c as Client) {
     return itemsFrom(get($c, "/api/vcenter/datacenter"), "datacenter");
@@ -1517,7 +1547,7 @@ export func datacenters(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Item} the networks; `type` tells them apart
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func networks(c as Client) {
     return itemsFrom(get($c, "/api/vcenter/network"), "network");
@@ -1530,7 +1560,7 @@ export func networks(c as Client) {
  * @param type {string} `VIRTUAL_MACHINE`, `HOST`, `DATACENTER`, `DATASTORE`,
  *   `NETWORK`; "" for every folder
  * @return {list of Item} the folders
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func folders(c as Client, type as string) {
     def params as map of string to list of string init {};
@@ -1545,7 +1575,7 @@ export func folders(c as Client, type as string) {
  *
  * @param c {Client} the client
  * @return {list of Item} the resource pools
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func resourcePools(c as Client) {
     return itemsFrom(get($c, "/api/vcenter/resource-pool"), "resource_pool");
@@ -1574,7 +1604,7 @@ func taskPath(path as string) {
  * @param path {string} the path, with any query string
  * @param body {json.Value} the request body; JSON `null` sends none
  * @return {string} the task id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func startTask(c as Client, method as string, path as string, body as json.Value) {
     return idOf(call($c, $method, taskPath($path), $body), "startTask");
@@ -1586,7 +1616,7 @@ export func startTask(c as Client, method as string, path as string, body as jso
  * @param c {Client} the client
  * @param id {string} the task id
  * @return {Task} the task
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func taskStatus(c as Client, id as string) {
     def d as json.Value init get($c, "/api/cis/tasks/" + segment($id));
@@ -1625,7 +1655,7 @@ export func taskStatus(c as Client, id as string) {
  * @param id {string} the task id
  * @param timeoutMs {int} how long to wait; 0 waits for ever
  * @return {Task} the ended task; it worked when `status` is `SUCCEEDED`
- * @throws {Error} kind `"vmware"` when the time runs out, after
+ * @throws {VmwareError} kind `"vmware"` when the time runs out, after
  *   `MAX_POLL_FAILURES` failed checks in a row, or on a 4xx answer
  */
 export func waitTask(c as Client, id as string, timeoutMs as int) {
@@ -1639,6 +1669,11 @@ export func waitTask(c as Client, id as string, timeoutMs as int) {
             $t = taskStatus($c, $id);
         } catch (e) {
             $answered = false;
+            # only the deck's own failures can be retried; a cap, a
+            # cancellation or a fault passes on at once
+            if ($e.kind != ERROR_KIND) {
+                throw $e;
+            }
             $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
@@ -1685,7 +1720,7 @@ func cloneBody(source as string, name as string, placement as Placement, powerOn
  * @param placement {Placement} where it goes; empty fields keep the source's
  * @param powerOn {bool} power it on when done
  * @return {string} the task id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func cloneVmTask(
     c as Client,
@@ -1706,7 +1741,7 @@ export func cloneVmTask(
  * @param c {Client} the client
  * @return {list of Item} the specs: `id` and `name` are the spec's name,
  *   `type` its OS type (`LINUX` or `WINDOWS`)
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func customizationSpecs(c as Client) {
     def d as json.Value init get($c, "/api/vcenter/guest/customization-specs");
@@ -1726,7 +1761,7 @@ export func customizationSpecs(c as Client) {
  * @param vm {string} the VM id
  * @param specName {string} the spec's name
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func customize(c as Client, vm as string, specName as string) {
     def body as json.Value init json.set(json.map(), "/name", $specName);
@@ -1740,7 +1775,7 @@ export func customize(c as Client, vm as string, specName as string) {
  *
  * @param lc {LinuxCustomization} the settings
  * @return {json.Value} the `spec` object
- * @throws {Error} kind `"vmware"` when the host name or domain is empty
+ * @throws {VmwareError} kind `"vmware"` when the host name or domain is empty
  */
 export func linuxSpec(lc as LinuxCustomization) {
     if ($lc.hostName == "" or $lc.domain == "") {
@@ -1783,7 +1818,7 @@ export func linuxSpec(lc as LinuxCustomization) {
  * @param vm {string} the VM id
  * @param spec {json.Value} the spec, e.g. from `linuxSpec`
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func customizeWith(c as Client, vm as string, spec as json.Value) {
     def body as json.Value init json.set(json.map(), "/spec", $spec);
@@ -1798,7 +1833,7 @@ export func customizeWith(c as Client, vm as string, spec as json.Value) {
  * @param vm {string} the VM id, powered off
  * @param lc {LinuxCustomization} the settings
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `linuxSpec` and `call`
+ * @throws {VmwareError} kind `"vmware"` as `linuxSpec` and `call`
  */
 export func customizeLinux(c as Client, vm as string, lc as LinuxCustomization) {
     return customizeWith($c, $vm, linuxSpec($lc));
@@ -1822,7 +1857,7 @@ func hardwarePath(vm as string, part as string) {
  * @param vm {string} the VM id
  * @param count {int} virtual CPUs
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func setCpu(c as Client, vm as string, count as int) {
     patch($c, hardwarePath($vm, "cpu"), json.set(json.map(), "/count", $count));
@@ -1837,7 +1872,7 @@ export func setCpu(c as Client, vm as string, count as int) {
  * @param vm {string} the VM id
  * @param mib {int} memory in MiB
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func setMemory(c as Client, vm as string, mib as int) {
     patch($c, hardwarePath($vm, "memory"), json.set(json.map(), "/size_MiB", $mib));
@@ -1865,7 +1900,7 @@ func idsOf(d as json.Value, key as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {list of Disk} the disks
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func disks(c as Client, vm as string) {
     def ids as list of string init idsOf(get($c, hardwarePath($vm, "disk")), "disk");
@@ -1895,7 +1930,7 @@ export func disks(c as Client, vm as string) {
  * @param vm {string} the VM id
  * @param gib {int} its size in GiB
  * @return {string} the new disk's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func addDisk(c as Client, vm as string, gib as int) {
     def body as json.Value init json.set(json.map(), "/new_vmdk", json.map());
@@ -1910,7 +1945,7 @@ export func addDisk(c as Client, vm as string, gib as int) {
  * @param vm {string} the VM id
  * @param disk {string} the disk id, from `disks`
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func removeDisk(c as Client, vm as string, disk as string) {
     delete($c, hardwarePath($vm, "disk/" + segment($disk)));
@@ -1923,7 +1958,7 @@ export func removeDisk(c as Client, vm as string, disk as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {list of Nic} the NICs
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func nics(c as Client, vm as string) {
     def ids as list of string init idsOf(get($c, hardwarePath($vm, "ethernet")), "nic");
@@ -1958,7 +1993,7 @@ export func nics(c as Client, vm as string) {
  * @param networkType {string} its type, as `networks` reports it; "" means
  *   `STANDARD_PORTGROUP`
  * @return {string} the new NIC's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func addNic(c as Client, vm as string, network as string, networkType as string) {
     def kind as string init $networkType;
@@ -1981,7 +2016,7 @@ export func addNic(c as Client, vm as string, network as string, networkType as 
  * @param vm {string} the VM id
  * @param nic {string} the NIC id, from `nics`
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func connectNic(c as Client, vm as string, nic as string) {
     send($c, "POST", hardwarePath($vm, "ethernet/" + segment($nic)) + "?action=connect", {}, "");
@@ -1995,7 +2030,7 @@ export func connectNic(c as Client, vm as string, nic as string) {
  * @param vm {string} the VM id
  * @param nic {string} the NIC id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func disconnectNic(c as Client, vm as string, nic as string) {
     send($c, "POST", hardwarePath($vm, "ethernet/" + segment($nic)) + "?action=disconnect", {}, "");
@@ -2009,7 +2044,7 @@ export func disconnectNic(c as Client, vm as string, nic as string) {
  * @param vm {string} the VM id
  * @param nic {string} the NIC id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func removeNic(c as Client, vm as string, nic as string) {
     delete($c, hardwarePath($vm, "ethernet/" + segment($nic)));
@@ -2021,7 +2056,7 @@ export func removeNic(c as Client, vm as string, nic as string) {
  *
  * @param c {Client} the client
  * @return {list of Category} the categories
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func categories(c as Client) {
     def ids as list of string init stringsOf(get($c, "/api/cis/tagging/category"));
@@ -2048,7 +2083,7 @@ export func categories(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Tag} the tags
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func tags(c as Client) {
     def ids as list of string init stringsOf(get($c, "/api/cis/tagging/tag"));
@@ -2089,7 +2124,7 @@ func stringsOf(d as json.Value) {
  * @param name {string} category name
  * @param cardinality {string} `SINGLE` (one tag of it per object) or `MULTIPLE`
  * @return {string} the new category's id
- * @throws {Error} kind `"vmware"` on another cardinality, or as `call`
+ * @throws {VmwareError} kind `"vmware"` on another cardinality, or as `call`
  */
 export func createCategory(c as Client, name as string, cardinality as string) {
     if ($cardinality != "SINGLE" and $cardinality != "MULTIPLE") {
@@ -2110,7 +2145,7 @@ export func createCategory(c as Client, name as string, cardinality as string) {
  * @param categoryId {string} its category
  * @param name {string} tag name
  * @return {string} the new tag's id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func createTag(c as Client, categoryId as string, name as string) {
     def body as json.Value init json.map();
@@ -2126,7 +2161,7 @@ export func createTag(c as Client, categoryId as string, name as string) {
  * @param c {Client} the client
  * @param tag {string} the tag id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func deleteTag(c as Client, tag as string) {
     delete($c, "/api/cis/tagging/tag/" + segment($tag));
@@ -2139,7 +2174,7 @@ export func deleteTag(c as Client, tag as string) {
  * @param c {Client} the client
  * @param category {string} the category id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func deleteCategory(c as Client, category as string) {
     delete($c, "/api/cis/tagging/category/" + segment($category));
@@ -2165,7 +2200,7 @@ func vmObject(vm as string) {
  * @param tag {string} the tag id
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func attachTag(c as Client, tag as string, vm as string) {
     post($c, "/api/cis/tagging/tag-association/" + segment($tag) + "?action=attach", vmObject($vm));
@@ -2179,7 +2214,7 @@ export func attachTag(c as Client, tag as string, vm as string) {
  * @param tag {string} the tag id
  * @param vm {string} the VM id
  * @return {null} nothing
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func detachTag(c as Client, tag as string, vm as string) {
     post($c, "/api/cis/tagging/tag-association/" + segment($tag) + "?action=detach", vmObject($vm));
@@ -2192,7 +2227,7 @@ export func detachTag(c as Client, tag as string, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {list of string} the tag ids
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func vmTags(c as Client, vm as string) {
     def d as json.Value init post(
@@ -2212,7 +2247,7 @@ export func vmTags(c as Client, vm as string) {
  * @param c {Client} the client
  * @param tag {string} the tag id
  * @return {list of string} the VM ids; other kinds of object are left out
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func taggedVms(c as Client, tag as string) {
     def path as string init "/api/cis/tagging/tag-association/" + segment($tag) +
@@ -2233,7 +2268,7 @@ export func taggedVms(c as Client, tag as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id, running with Tools
  * @return {list of GuestInterface} the interfaces
- * @throws {Error} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` without Tools
+ * @throws {VmwareError} kind `"vmware"` as `call`; `SERVICE_UNAVAILABLE` without Tools
  */
 export func guestInterfaces(c as Client, vm as string) {
     def d as json.Value init get(
@@ -2262,7 +2297,7 @@ export func guestInterfaces(c as Client, vm as string) {
  * @param c {Client} the client
  * @param vm {string} the VM id
  * @return {list of string} e.g. `["10.0.0.5", "2001:db8::5"]`
- * @throws {Error} kind `"vmware"` as `guestInterfaces`
+ * @throws {VmwareError} kind `"vmware"` as `guestInterfaces`
  */
 export func guestAddresses(c as Client, vm as string) {
     def out as list of string init [];
@@ -2303,7 +2338,7 @@ func credentialsJson(creds as GuestCredentials) {
  * @param path {string} absolute path of the program, e.g. `/bin/sh`
  * @param arguments {string} its arguments, e.g. `-c "systemctl restart nginx"`
  * @return {int} the process id
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func runInGuest(
     c as Client,
@@ -2334,7 +2369,7 @@ export func runInGuest(
  * @param creds {GuestCredentials} the guest account
  * @param pid {int} the process id, from `runInGuest`
  * @return {GuestProcess} the process
- * @throws {Error} kind `"vmware"` as `call`
+ * @throws {VmwareError} kind `"vmware"` as `call`
  */
 export func guestProcess(c as Client, vm as string, creds as GuestCredentials, pid as int) {
     def path as string init "/api/vcenter/vm/" + segment($vm) + "/guest/processes/" +
@@ -2357,7 +2392,7 @@ export func guestProcess(c as Client, vm as string, creds as GuestCredentials, p
  * @param pid {int} the process id
  * @param timeoutMs {int} how long to wait; 0 waits for ever
  * @return {GuestProcess} the finished process
- * @throws {Error} kind `"vmware"` when the time runs out, after
+ * @throws {VmwareError} kind `"vmware"` when the time runs out, after
  *   `MAX_POLL_FAILURES` failed checks in a row, or on a 4xx answer
  */
 export func waitGuestProcess(
@@ -2375,6 +2410,11 @@ export func waitGuestProcess(
             $p = guestProcess($c, $vm, $creds, $pid);
         } catch (e) {
             $answered = false;
+            # only the deck's own failures can be retried; a cap, a
+            # cancellation or a fault passes on at once
+            if ($e.kind != ERROR_KIND) {
+                throw $e;
+            }
             $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
@@ -2428,13 +2468,13 @@ func isLocalAddress(ip as string) {
  * session does not heal by waiting); a network failure or a 5xx answer is
  * retried up to `MAX_POLL_FAILURES` times in a row.
  *
- * @param e {Error} the failure
+ * @param e {VmwareError} the failure
  * @param failures {int} failures in a row so far
  * @return {int} the new count
- * @throws {Error} the failure itself, when it is final
+ * @throws {VmwareError} the failure itself, when it is final
  */
-func retryOrThrow(e as Error, failures as int) {
-    if ($e.kind != ERROR_KIND or regex.matches(": HTTP 4[0-9][0-9]", $e.message)) {
+func retryOrThrow(e as VmwareError, failures as int) {
+    if ($e.status >= 400 and $e.status <= 499) {
         throw $e;
     }
     if ($failures + 1 >= MAX_POLL_FAILURES) {
@@ -2452,7 +2492,7 @@ func retryOrThrow(e as Error, failures as int) {
  * @param username {string} the user to log in as when needed
  * @param password {string} its password
  * @return {Client} the client with a working session
- * @throws {Error} kind `"vmware"` when the check fails for another reason
+ * @throws {VmwareError} kind `"vmware"` when the check fails for another reason
  *   than an ended session, or the login is refused
  */
 export func ensureSession(c as Client, username as string, password as string) {
@@ -2462,7 +2502,8 @@ export func ensureSession(c as Client, username as string, password as string) {
     try {
         get($c, "/api/session");
     } catch (e) {
-        if (not strings.contains($e.message, ": HTTP 401")) {
+        # only an ended session (401) means log in again
+        if ($e.kind != ERROR_KIND or $e.status != 401) {
             throw $e;
         }
         return login($c, $username, $password);

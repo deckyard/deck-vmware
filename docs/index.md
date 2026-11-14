@@ -41,8 +41,9 @@ these ids; names are not unique in vSphere.
 
 ## Errors
 
-Every failure is `Error{kind: "vmware"}`, with a message that starts with
-`vmware:` and names the request:
+Every failure is a `vmware.VmwareError` (kind `"vmware"`), with a message that
+starts with `vmware:` and names the request, and the HTTP `status` vCenter
+answered as a field (0 when there was no answer):
 
 - a refused request: `vmware: POST /api/vcenter/vm/vm-42/power: HTTP 400 ALREADY_IN_DESIRED_STATE: Virtual machine is already powered on.`
   The error type and message are vSphere's own.
@@ -59,8 +60,10 @@ try {
 }
 ```
 
-`HTTP 401 UNAUTHENTICATED` means the session has ended: log in again. Writes
-are never retried; `withRetries` retries only GETs answered 429 or 5xx.
+Status 401 (`HTTP 401 UNAUTHENTICATED`) means the session has ended: log in
+again, or let `vmware.ensureSession` do it. Branch on `$e.status`, not on the
+message. A reply over its size cap is kind `"limit"` instead (a plain
+`Error`). Writes are never retried; `withRetries` retries only GETs answered 429 or 5xx.
 
 ## What is not here
 

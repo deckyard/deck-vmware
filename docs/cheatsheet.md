@@ -10,8 +10,9 @@ Every export of `@deckyard/vmware`. Guides are listed in
 import "@deckyard/vmware/" as vmware;
 ```
 
-Every function that sends a request throws `Error{kind: "vmware"}` when it
-fails. A `vm` argument is a VM id such as `vm-42`.
+Every function that sends a request throws a `VmwareError` (kind `"vmware"`,
+with the HTTP `status`) when it fails; a reply over its size cap is kind
+`"limit"`. A `vm` argument is a VM id such as `vm-42`.
 
 ## Constants
 
@@ -25,6 +26,16 @@ fails. A `vm` argument is a VM id such as `vm-42`.
 | `SUSPENDED` | `"SUSPENDED"` | power state: suspended |
 
 ## Types
+
+### `VmwareError`
+
+Every error of kind `"vmware"`.
+
+| Field | Meaning |
+|---|---|
+| `kind as string` | always `"vmware"` |
+| `message as string` | `vmware: <verb> <path>: HTTP <status> <ERROR_TYPE>: <reason>`, or what went wrong |
+| `status as int` | the HTTP status vCenter answered; 0 when none was read or for a local check |
 
 ### `Client`
 

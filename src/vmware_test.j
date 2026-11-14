@@ -304,6 +304,7 @@ func testARefusedLogin() {
     } catch (e) {
         testing.assertEqual($e.kind, ERROR_KIND);
         testing.assertEqual($e.message, "vmware: POST /api/session: HTTP 401 UNAUTHENTICATED");
+        testing.assertEqual($e.status, 401);
     }
     try {
         login(client($f.url), "ada", "pw");
@@ -990,6 +991,7 @@ func testWaitingRetriesOutagesButNotRefusals() {
         missed("a 401 was retried");
     } catch (e) {
         testing.assertTrue(strings.contains($e.message, "HTTP 401 UNAUTHENTICATED"));
+        testing.assertEqual($e.status, 401);
     }
     finish($f);
     testing.assertEqual($t.result, "vm-9");
@@ -1007,6 +1009,7 @@ func testWaitingGivesUpAfterTooManyFailures() {
         missed("waitTask retried for ever");
     } catch (e) {
         testing.assertTrue(strings.contains($e.message, "HTTP 500"));
+        testing.assertEqual($e.status, 500);
     }
     def seen as list of Seen init finish($f);
     testing.assertEqual(len($seen), MAX_POLL_FAILURES);
@@ -1030,6 +1033,8 @@ func testEnsureSession() {
         missed("a 503 led to a new login");
     } catch (e) {
         testing.assertTrue(strings.contains($e.message, "HTTP 503"));
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 503);
     }
     def seen as list of Seen init finish($f);
     testing.assertEqual($seen[1].method, "GET");
@@ -1053,4 +1058,32 @@ func testDescribeHidesTheSession() {
  */
 func sessionClientFor(url as string) {
     return withSession(client($url), "b00db39f948d13ea1e59b814e6e1ed4e");
+}
+
+# A local check has status 0; a cap reached in transport stays kind "limit",
+# with the request in front of the cause.
+func testLocalFailuresAndCaps() {
+    try {
+        fail("a bad value");
+        missed("fail did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 0);
+    }
+    try {
+        failTransport(
+            "GET /api",
+            Error{kind: "limit", message: "http: response body exceeds 10 bytes"});
+        missed("failTransport did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+        testing.assertEqual($e.message, "vmware: GET /api: http: response body exceeds 10 bytes");
+    }
+    try {
+        failTransport("GET /api", Error{kind: "http", message: "connection refused"});
+        missed("failTransport did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 0);
+    }
 }
