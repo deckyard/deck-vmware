@@ -29,9 +29,10 @@ def vm as string init $t.result;
 
 `waitTask` asks once a second (`vmware.withPollInterval` changes it) and
 throws when its timeout runs out; a failed task does not throw, so check
-`status`. A network failure or a 5xx answer during the wait is retried, up to
-`MAX_POLL_FAILURES` (5) in a row; a 4xx answer, such as an ended session,
-ends the wait at once. `waitGuestProcess` behaves the same. `vmware.startTask` starts any other operation the API reference
+`status`. A 5xx answer, a timeout or a connection that never reached vCenter
+(a `net.NetError` with `sent` false) during the wait is retried, up to
+`MAX_POLL_FAILURES` (5) in a row; a 4xx answer, such as an ended session, or
+a connection reset after the request went out ends the wait at once. `waitGuestProcess` behaves the same. `vmware.startTask` starts any other operation the API reference
 marks as a task, by adding `vmw-task=true`.
 
 ## Guest customization

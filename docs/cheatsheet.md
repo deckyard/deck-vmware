@@ -12,7 +12,8 @@ import "@deckyard/vmware/" as vmware;
 
 Every function that sends a request throws a `VmwareError` (kind `"vmware"`,
 with the HTTP `status`) when it fails; a reply over its size cap is kind
-`"limit"`. A `vm` argument is a VM id such as `vm-42`.
+`"limit"`, and a vCenter that cannot be reached is a `net.NetError` (kind
+`"net"`). A `vm` argument is a VM id such as `vm-42`.
 
 ## Constants
 

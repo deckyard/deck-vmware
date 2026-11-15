@@ -10,6 +10,7 @@
  * and hands back what it received.
  */
 use httpd;
+use net;
 use task;
 use testing;
 
@@ -348,7 +349,7 @@ func testGenericVerbs() {
     testing.assertEqual($seen[3].method, "DELETE");
     testing.assertEqual($seen[3].path, "/api/cis/tagging/tag/t1");
     testing.assertEqual($seen[4].method, "GET");
-    testing.assertThrows("unreachable", ERROR_KIND);
+    testing.assertThrows("unreachable", "net");
 }
 
 func testVms() {
@@ -1080,10 +1081,67 @@ func testLocalFailuresAndCaps() {
         testing.assertEqual($e.message, "vmware: GET /api: http: response body exceeds 10 bytes");
     }
     try {
-        failTransport("GET /api", Error{kind: "http", message: "connection refused"});
+        failTransport("GET /api", Error{kind: "http", message: "malformed status line"});
         missed("failTransport did not throw");
     } catch (e) {
         testing.assertEqual($e.kind, ERROR_KIND);
         testing.assertEqual($e.status, 0);
     }
+}
+
+# A server that cannot be reached is the transport's net.NetError, passed on
+# with its fields by a single request and by the kept-alive detail fetches.
+func testAnUnreachableServerIsANetError() {
+    def c as Client init withSession(withTimeout(client("http://127.0.0.1:1"), 2000), "s1");
+    try {
+        get($c, "/api/vcenter/vm");
+        missed("get reached a closed port");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        testing.assertEqual($e.reason, "refused");
+        testing.assertEqual($e.op, "connect");
+        testing.assertFalse($e.sent);
+        testing.assertFalse($e.replied);
+    }
+    try {
+        getMany($c, ["/api/vcenter/vm/vm-1/hardware/disk/2000"]);
+        missed("getMany reached a closed port");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        testing.assertEqual($e.reason, "refused");
+    }
+}
+
+# A poll that never reached vCenter is retried like an outage, up to
+# MAX_POLL_FAILURES; a reset after the request went out is passed on at once.
+func testWaitingRetriesARefusalButNotAReset() {
+    def c as Client init withPollInterval(
+        withSession(withTimeout(client("http://127.0.0.1:1"), 2000), "s1"),
+        1);
+    try {
+        waitTask($c, "task-1", 0);
+        missed("waitTask retried for ever");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        testing.assertEqual($e.reason, "refused");
+    }
+    def l as net.Listener init net.listen("127.0.0.1:0");
+    def t as task of int init spawn {
+        def conn as net.Conn init net.accept($l);
+        net.readBytes($conn, 65536);
+        net.abort($conn);
+        return 1;
+    };
+    $c.url = "http://" + net.address($l);
+    try {
+        waitTask($c, "task-1", 0);
+        missed("waitTask ignored a reset");
+    } catch (e) {
+        # a retry would wait on a second connection nobody accepts
+        testing.assertEqual($e.kind, "net");
+        testing.assertEqual($e.reason, "reset");
+        testing.assertTrue($e.sent);
+    }
+    testing.assertEqual(task.wait($t), 1);
+    net.close($l);
 }

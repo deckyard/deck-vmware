@@ -47,7 +47,7 @@ answered as a field (0 when there was no answer):
 
 - a refused request: `vmware: POST /api/vcenter/vm/vm-42/power: HTTP 400 ALREADY_IN_DESIRED_STATE: Virtual machine is already powered on.`
   The error type and message are vSphere's own.
-- a network failure or timeout, with the `http` module's message.
+- a timeout, with the `http` module's message.
 - a reply that is not JSON, a login without a session id, an empty object
   id, an API path that could leave the host, a name that matches no VM or
   several.
@@ -63,7 +63,10 @@ try {
 Status 401 (`HTTP 401 UNAUTHENTICATED`) means the session has ended: log in
 again, or let `vmware.ensureSession` do it. Branch on `$e.status`, not on the
 message. A reply over its size cap is kind `"limit"` instead (a plain
-`Error`). Writes are never retried; `withRetries` retries only GETs answered 429 or 5xx.
+`Error`), and a vCenter that cannot be reached (connection refused or reset,
+DNS, TLS, a close before any answer) is the `http` module's `net.NetError`
+(kind `"net"`), passed on with its fields: `reason` says which, and `sent`
+false means vCenter never got the request. Writes are never retried; `withRetries` retries only GETs answered 429 or 5xx.
 
 ## What is not here
 

@@ -18,7 +18,8 @@
  * certificate from its own CA (VMCA): trust it with `withCaCert`, or turn
  * checking off with `withInsecure`. Every failure is a `VmwareError` (kind
  * `"vmware"`) carrying the HTTP `status` vCenter answered; a reply over its
- * size cap is kind `"limit"`.
+ * size cap is kind `"limit"`, and a server that cannot be reached is the
+ * `http` module's `net.NetError` (kind `"net"`), passed on unchanged.
  *
  * @module vmware
  * @see https://developer.broadcom.com/xapis/vsphere-automation-api/latest/
@@ -442,6 +443,8 @@ func failStatus(message as string, status as int) {
 # failTransport throws the error of a request that got no usable answer: a
 # reached cap (an `http` body cap) stays kind "limit", anything else is a
 # VmwareError; the message is `vmware: <verb> <path>: <cause>` either way.
+# A net.NetError never gets here: the callers pass kind "net" on first, as a
+# struct is not accepted where `Error` is declared.
 func failTransport(what as string, e as Error) {
     if ($e.kind == "limit") {
         throw Error{kind: "limit", message: "vmware: " + $what + ": " + $e.message};
@@ -683,6 +686,10 @@ func send(
     try {
         $r = http.send($method, $c.url + $path, $headers, $body, $o);
     } catch (e) {
+        # a transport failure goes on as the net.NetError it is, fields intact
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport($method + " " + $path, $e);
     }
     return decodeReply($r, $method + " " + $path);
@@ -736,6 +743,10 @@ func getMany(c as Client, paths as list of string) {
     try {
         $s = http.connect($c.url, $o);
     } catch (e) {
+        # a transport failure goes on as the net.NetError it is, fields intact
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport("GET " + $paths[0], $e);
     }
     for (def path in $paths) {
@@ -744,6 +755,9 @@ func getMany(c as Client, paths as list of string) {
             $ex = http.exchange($s, "GET", $path, $headers, "");
         } catch (e) {
             http.close($s);
+            if ($e.kind == "net") {
+                throw $e;
+            }
             failTransport("GET " + $path, $e);
         }
         $s = $ex.session;
@@ -781,9 +795,10 @@ func detailPaths(prefix as string, ids as list of string) {
  * @param path {string} the path, `/api/...`, with any query string (see `query`)
  * @param body {json.Value} the request body; JSON `null` sends none
  * @return {json.Value} the reply; JSON `null` for an empty one (204)
- * @throws {VmwareError} kind `"vmware"` on a bad path, a network failure or a reply
+ * @throws {VmwareError} kind `"vmware"` on a bad path, a timeout or a reply
  *   that is not 2xx; the message names the status, vSphere's error type and
  *   its message
+ * @throws {net.NetError} kind `"net"` when vCenter cannot be reached
  */
 export func call(c as Client, method as string, path as string, body as json.Value) {
     def verb as string init strings.upper($method);
@@ -1648,8 +1663,9 @@ export func taskStatus(c as Client, id as string) {
 }
 
 /**
- * Wait until a task ends, asking every `pollMs`; a network
- * failure or a 5xx answer is retried (see `withPollInterval`).
+ * Wait until a task ends, asking every `pollMs`; a 5xx answer, a timeout
+ * or a connection that never reached vCenter (a `net.NetError` with `sent`
+ * false) is retried (see `withPollInterval`).
  *
  * @param c {Client} the client
  * @param id {string} the task id
@@ -1657,6 +1673,8 @@ export func taskStatus(c as Client, id as string) {
  * @return {Task} the ended task; it worked when `status` is `SUCCEEDED`
  * @throws {VmwareError} kind `"vmware"` when the time runs out, after
  *   `MAX_POLL_FAILURES` failed checks in a row, or on a 4xx answer
+ * @throws {net.NetError} kind `"net"` after `MAX_POLL_FAILURES` refused
+ *   checks in a row, or at once for a request that was sent (a reset)
  */
 export func waitTask(c as Client, id as string, timeoutMs as int) {
     def started as time.Time init time.now();
@@ -1669,12 +1687,22 @@ export func waitTask(c as Client, id as string, timeoutMs as int) {
             $t = taskStatus($c, $id);
         } catch (e) {
             $answered = false;
-            # only the deck's own failures can be retried; a cap, a
-            # cancellation or a fault passes on at once
-            if ($e.kind != ERROR_KIND) {
-                throw $e;
+            # a request that never reached vCenter (a net.NetError not sent)
+            # is retried like an outage; one that was sent may have been
+            # answered, so it passes on with the other generic kinds
+            if ($e.kind == "net" and not $e.sent) {
+                if ($failures + 1 >= MAX_POLL_FAILURES) {
+                    throw $e;
+                }
+                $failures = $failures + 1;
+            } else {
+                # only the deck's own failures can be retried; a cap, a
+                # cancellation or a fault passes on at once
+                if ($e.kind != ERROR_KIND) {
+                    throw $e;
+                }
+                $failures = retryOrThrow($e, $failures);
             }
-            $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
             if ($t.status == "SUCCEEDED" or $t.status == "FAILED") {
@@ -2383,8 +2411,9 @@ export func guestProcess(c as Client, vm as string, creds as GuestCredentials, p
 }
 
 /**
- * Wait until a guest process ends, asking every `pollMs`; a network
- * failure or a 5xx answer is retried.
+ * Wait until a guest process ends, asking every `pollMs`; a 5xx answer, a
+ * timeout or a connection that never reached vCenter (a `net.NetError`
+ * with `sent` false) is retried.
  *
  * @param c {Client} the client
  * @param vm {string} the VM id
@@ -2394,6 +2423,8 @@ export func guestProcess(c as Client, vm as string, creds as GuestCredentials, p
  * @return {GuestProcess} the finished process
  * @throws {VmwareError} kind `"vmware"` when the time runs out, after
  *   `MAX_POLL_FAILURES` failed checks in a row, or on a 4xx answer
+ * @throws {net.NetError} kind `"net"` after `MAX_POLL_FAILURES` refused
+ *   checks in a row, or at once for a request that was sent (a reset)
  */
 export func waitGuestProcess(
     c as Client,
@@ -2410,12 +2441,22 @@ export func waitGuestProcess(
             $p = guestProcess($c, $vm, $creds, $pid);
         } catch (e) {
             $answered = false;
-            # only the deck's own failures can be retried; a cap, a
-            # cancellation or a fault passes on at once
-            if ($e.kind != ERROR_KIND) {
-                throw $e;
+            # a request that never reached vCenter (a net.NetError not sent)
+            # is retried like an outage; one that was sent may have been
+            # answered, so it passes on with the other generic kinds
+            if ($e.kind == "net" and not $e.sent) {
+                if ($failures + 1 >= MAX_POLL_FAILURES) {
+                    throw $e;
+                }
+                $failures = $failures + 1;
+            } else {
+                # only the deck's own failures can be retried; a cap, a
+                # cancellation or a fault passes on at once
+                if ($e.kind != ERROR_KIND) {
+                    throw $e;
+                }
+                $failures = retryOrThrow($e, $failures);
             }
-            $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
             if ($p.finished) {
