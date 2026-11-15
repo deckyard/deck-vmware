@@ -100,7 +100,6 @@ Not in scope:
   method, path, query, authorization, session header, content type and body
   recorded. An unreachable server is `127.0.0.1:1`.
 - The examples need a vCenter and credentials, so CI only parses them.
-- Not covered: no validation run against a live vCenter is recorded.
 
 ## Known limitations and open questions
 
@@ -118,13 +117,3 @@ Not in scope:
 - Thrown structs classified by kind (`jennifer` `6abf345`, the error-struct
   work of M28.51 to M28.57), and transport failures as `net.NetError` with
   `sent` (M28.65).
-
-## History
-
-- 2026-11-03: first version.
-- 2026-11-06: every link-local address dropped in `guestAddresses`.
-- 2026-11-11: floor raised to 0.26.0; name-first argument order.
-- 2026-11-14: `VmwareError` with the HTTP status; retries and session checks
-  read `status` instead of the message; caps kind `"limit"`.
-- 2026-11-15: transport failures passed on as `net.NetError`; polls retry
-  one only when the request was never sent.
