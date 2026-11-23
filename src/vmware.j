@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -465,10 +465,10 @@ func baseUrl(address as string) {
         fail("the host is empty");
     }
     while (strings.endsWith($url, "/")) {
-        $url = strings.substring($url, 0, len($url) - 1);
+        $url = $url[..len($url) - 1];
     }
     if (strings.endsWith($url, "/api")) {
-        $url = strings.substring($url, 0, len($url) - len("/api"));
+        $url = $url[..len($url) - len("/api")];
     }
     if (strings.contains($url, "://")) {
         return $url;
@@ -905,7 +905,7 @@ func failureText(r as http.Response) {
     }
     if ($kind != "") {
         def dot as int init strings.lastIndexOf($kind, ".");
-        $text = $text + " " + strings.upper(strings.substring($kind, $dot + 1));
+        $text = $text + " " + strings.upper($kind[$dot + 1..]);
     }
     def said as list of string init [];
     for (def p in items(getAt($doc, $base + "/messages"))) {
@@ -1657,7 +1657,7 @@ export func taskStatus(c as Client, id as string) {
         def r as http.Response;
         $r.status = 0;
         $r.body = json.encode(json.get($d, "/error"));
-        $t.error = strings.trim(strings.substring(failureText($r), len("HTTP 0")));
+        $t.error = strings.trim(failureText($r)[len("HTTP 0")..]);
     }
     return $t;
 }

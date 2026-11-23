@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 
 /**
  * White-box tests for vmware: jennifer test src/vmware_test.j
@@ -9,6 +9,7 @@
  * `httpd` server on a loopback port that answers with canned vCenter replies
  * and hands back what it received.
  */
+use encoding;
 use httpd;
 use net;
 use task;
@@ -86,7 +87,7 @@ func serve(srv as httpd.Server, replies as list of Reply) {
             auth: httpd.header($req, "Authorization"),
             session: httpd.header($req, SESSION_HEADER),
             contentType: httpd.header($req, "Content-Type"),
-            body: convert.stringFromBytes("utf-8", httpd.body($req))
+            body: encoding.decode("utf-8", httpd.body($req))
         };
         httpd.respond($req, $r.status, $r.body);
     }
@@ -193,7 +194,7 @@ func testBuilders() {
     def c as Client init client("vc");
     testing.assertEqual($c.session, "");
     testing.assertEqual(withInsecure($c).tls.skipVerify, true);
-    def pem as bytes init convert.bytesFromString("utf-8", "-----BEGIN CERTIFICATE-----");
+    def pem as bytes init encoding.encode("utf-8", "-----BEGIN CERTIFICATE-----");
     def trusted as Client init withCaCert(withInsecure($c), $pem);
     testing.assertEqual($trusted.tls.skipVerify, false);
     testing.assertEqual($trusted.tls.caCert, $pem);
@@ -422,7 +423,7 @@ func testVmDetailAndPower() {
     testing.assertEqual($seen[0].path, "/api/vcenter/vm/vm-42");
     testing.assertEqual($seen[1].path, "/api/vcenter/vm/vm-42/power");
     def calls as list of string init [];
-    for (def s in lists.slice($seen, 2)) {
+    for (def s in $seen[2..]) {
         testing.assertEqual($s.method, "POST");
         $calls[] = $s.path + "?" + $s.query;
     }
@@ -1001,7 +1002,7 @@ func testWaitingRetriesOutagesButNotRefusals() {
 
 func testWaitingGivesUpAfterTooManyFailures() {
     def replies as list of Reply init [];
-    for (def i in lists.range(0, MAX_POLL_FAILURES)) {
+    for (def i in 0..MAX_POLL_FAILURES) {
         $replies[] = Reply{status: 500, body: ""};
     }
     def f as Fake init fake($replies);
