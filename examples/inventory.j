@@ -33,12 +33,16 @@ def v as vmware.Version init vmware.version($c);
 io.printf("%s %s (build %s)\n\n", $v.product, $v.version, $v.build);
 
 for (def h in vmware.hosts($c)) {
-    io.printf("host %-10s %-24s %s\n", $h.host, $h.name, $h.connectionState);
+    io.printf(
+        "host %s|pad=10|align=left %s|pad=24|align=left %s\n",
+        $h.host,
+        $h.name,
+        $h.connectionState);
 }
 def gib as int init 1073741824;
 for (def d in vmware.datastores($c)) {
     io.printf(
-        "datastore %-16s %-6s %d of %d GiB free\n",
+        "datastore %s|pad=16|align=left %s|pad=6|align=left %d of %d GiB free\n",
         $d.name,
         $d.type,
         $d.freeSpace // $gib,
@@ -49,7 +53,7 @@ io.printf("\n");
 def all as vmware.VmFilter;
 for (def vm in vmware.vms($c, $all)) {
     io.printf(
-        "%-8s %-24s %-12s %d CPU %d MiB\n",
+        "%s|pad=8|align=left %s|pad=24|align=left %s|pad=12|align=left %d CPU %d MiB\n",
         $vm.vm,
         $vm.name,
         $vm.powerState,
