@@ -3,7 +3,7 @@
 
 # Inside the guest
 
-Everything here needs VMware Tools running in the guest; without it vCenter
+Everything here needs VMware™ Tools running in the guest; without it vCenter™
 answers `SERVICE_UNAVAILABLE`.
 
 ## Addresses
@@ -35,7 +35,7 @@ def p as vmware.GuestProcess init vmware.waitGuestProcess($c, "vm-42", $root, $p
 io.printf("exit %d\n", $p.exitCode);
 ```
 
-Output is not captured: redirect it to a file on Linux, or run through
-`c:\windows\system32\cmd.exe /c` on Windows. The account needs the
+Output is not captured: redirect it to a file on Linux™, or run through
+`c:\windows\system32\cmd.exe /c` on Windows™. The account needs the
 `VirtualMachine.GuestOperations.Execute` privilege in vCenter as well as a
 login in the guest. Copying files in and out is not wrapped yet.

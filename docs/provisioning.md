@@ -29,7 +29,7 @@ def vm as string init $t.result;
 
 `waitTask` asks once a second (`vmware.withPollInterval` changes it) and
 throws when its timeout runs out; a failed task does not throw, so check
-`status`. A 5xx answer, a timeout or a connection that never reached vCenter
+`status`. A 5xx answer, a timeout or a connection that never reached vCenter™
 (a `net.NetError` with `sent` false) during the wait is retried, up to
 `MAX_POLL_FAILURES` (5) in a row; a 4xx answer, such as an ended session, or
 a connection reset after the request went out ends the wait at once. `waitGuestProcess` behaves the same. `vmware.startTask` starts any other operation the API reference
@@ -38,7 +38,7 @@ marks as a task, by adding `vmw-task=true`.
 ## Guest customization
 
 Customization gives a copy its own identity: host name, domain, time zone,
-DNS and the address of its first NIC. It needs VMware Tools in the template
+DNS and the address of its first NIC. It needs VMware™ Tools in the template
 and is applied at the next power-on, so customize the VM while it is off.
 
 ```jennifer
@@ -57,5 +57,5 @@ vmware.powerOn($c, $vm);
 Leave `ipAddress` empty for DHCP. For a setting `LinuxCustomization` lacks,
 build the spec with `vmware.linuxSpec`, change it with `json.set` and apply it
 with `vmware.customizeWith`. A specification stored in vCenter (listed by
-`vmware.customizationSpecs`, and the only way for Windows guests here) is
+`vmware.customizationSpecs`, and the only way for Windows™ guests here) is
 applied by name with `vmware.customize`.

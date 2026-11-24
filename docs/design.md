@@ -5,7 +5,7 @@
 
 ## Scope
 
-`@deckyard/vmware` is a client for vCenter's vSphere Automation REST API
+`@deckyard/vmware` is a client for vCenter™'s vSphere™ Automation REST API
 (`/api`, vCenter 7.0 U2 and newer) over HTTPS: inventory (VMs, hosts,
 clusters, datacenters, datastores, networks, folders, resource pools),
 creating, cloning, deploying and deleting VMs, power, tasks, guest
@@ -15,7 +15,7 @@ reach any other endpoint.
 
 Not in scope:
 
-- **A standalone ESXi host.** ESXi serves only the SOAP API (vSphere Web
+- **A standalone ESXi™ host.** ESXi serves only the SOAP API (vSphere Web
   Services); hosts are managed through their vCenter. The deck targets
   vCenter because its REST API is the clean, documented surface.
 - **vCenter before 7.0 U2.** Those versions have only the older `/rest` API

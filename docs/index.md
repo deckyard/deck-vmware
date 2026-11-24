@@ -3,7 +3,7 @@
 
 # @deckyard/vmware
 
-A client for the vSphere Automation REST API of vCenter: the JSON API under
+A client for the vSphere™ Automation REST API of vCenter™: the JSON API under
 `/api`, in vCenter 7.0 U2 and newer. `get`, `post`, `put`, `patch` and
 `delete` reach every endpoint and return the reply as a `json.Value`. Typed
 verbs cover the inventory (VMs, hosts, clusters, datacenters, datastores,
@@ -70,7 +70,7 @@ false means vCenter never got the request. Writes are never retried; `withRetrie
 
 ## What is not here
 
-- **A standalone ESXi host.** ESXi serves only the SOAP API (vSphere Web
+- **A standalone ESXi™ host.** ESXi serves only the SOAP API (vSphere Web
   Services), which this deck does not speak. Manage ESXi hosts through the
   vCenter they belong to.
 - **vCenter before 7.0 U2.** Those versions have only the older `/rest` API.
@@ -83,3 +83,11 @@ false means vCenter never got the request. Writes are never retried; `withRetrie
 
 Jennifer 0.27.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks.
+
+## Trademarks
+
+VMware™ and vSphere™ are trademarks of VMware LLC. vCenter™, ESXi™ and other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Broadcom
+Inc. or VMware LLC.

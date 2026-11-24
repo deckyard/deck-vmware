@@ -15,7 +15,7 @@ $c = vmware.withTimeout($c, 30000);
 
 ## Certificates
 
-vCenter's certificate is signed by its own CA, the VMCA, unless it was
+vCenter™'s certificate is signed by its own CA, the VMCA, unless it was
 replaced. Download the root from `https://<vcenter>/certs/download.zip` (the
 `.0` file under `certs/lin/` is PEM) and trust it:
 
@@ -62,7 +62,7 @@ vCenter limits the number of open sessions, so log out when done.
 
 The [API reference](https://developer.broadcom.com/xapis/vsphere-automation-api/latest/)
 lists every endpoint. Pass the path with its query string; `vmware.query`
-builds one, repeating a key for each value as vSphere's filters expect:
+builds one, repeating a key for each value as vSphere™'s filters expect:
 
 ```jennifer
 def path as string init "/api/vcenter/vm" + vmware.query({"power_states": ["POWERED_ON"], "hosts": ["host-12", "host-14"]});

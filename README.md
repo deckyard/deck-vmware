@@ -4,13 +4,13 @@
 [![Documentation](https://img.shields.io/badge/docs-github%20pages-blue)](https://deckyard.github.io/deck-vmware/)
 [![release](https://img.shields.io/github/v/release/deckyard/deck-vmware)](https://github.com/deckyard/deck-vmware/releases/latest)
 
-A [Jennifer](https://jennifer-lang.dev/) client for the vSphere Automation
-REST API of vCenter (`/api`, vCenter 7.0 U2 and newer). `get`, `post`,
+A [Jennifer](https://jennifer-lang.dev/) client for the vSphere™ Automation
+REST API of vCenter™ (`/api`, vCenter 7.0 U2 and newer). `get`, `post`,
 `put`, `patch` and `delete` reach every endpoint; typed verbs cover the
 inventory (VMs, hosts, clusters, datacenters, datastores, networks, folders,
 resource pools), creating, cloning, deploying and deleting VMs, tasks,
 guest customization, CPU, memory, disks and NICs, tags, VM power, the
-guest's addresses, and running programs in the guest. A standalone ESXi host
+guest's addresses, and running programs in the guest. A standalone ESXi™ host
 serves only the SOAP API and is not supported.
 
 **Infrastructure as Code (IaC).** VMs, their hardware, guest customization
@@ -73,5 +73,10 @@ real vCenter; see their headers.
 
 LGPL-3.0-only, see [LICENSE](LICENSE). Copyright (C) 2026 mplx &lt;mplx@jennifer-lang.dev&gt;.
 
-VMware, vSphere, vCenter and ESXi are trademarks of Broadcom. This deck is
-not affiliated with or endorsed by Broadcom.
+## Trademarks
+
+VMware™ and vSphere™ are trademarks of VMware LLC. vCenter™, ESXi™ and other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Broadcom
+Inc. or VMware LLC.

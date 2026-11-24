@@ -20,7 +20,7 @@ for (def vm in vmware.vms($c, $f)) {
 }
 ```
 
-vCenter refuses to list more than 4000 VMs at once
+vCenter™ refuses to list more than 4000 VMs at once
 (`UNABLE_TO_ALLOCATE_RESOURCE`); filter by cluster, host or folder then.
 
 `vmware.vmByName` finds the one VM with an exact name and throws when there
@@ -45,7 +45,7 @@ io.printf("%d cores per socket\n", json.asInt($detail, "/cpu/cores_per_socket"))
 | `vmware.rebootGuest` | ask the guest OS to reboot |
 
 The first four return when the VM has changed state. The two guest actions
-need VMware Tools running in the guest and return as soon as the request is
+need VMware™ Tools running in the guest and return as soon as the request is
 delivered; poll `vmware.powerState` to see the VM go off.
 
 A VM already in the requested state fails with `ALREADY_IN_DESIRED_STATE`.

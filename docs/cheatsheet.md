@@ -12,7 +12,7 @@ import "@deckyard/vmware/" as vmware;
 
 Every function that sends a request throws a `VmwareError` (kind `"vmware"`,
 with the HTTP `status`) when it fails; a reply over its size cap is kind
-`"limit"`, and a vCenter that cannot be reached is a `net.NetError` (kind
+`"limit"`, and a vCenter™ that cannot be reached is a `net.NetError` (kind
 `"net"`). A `vm` argument is a VM id such as `vm-42`.
 
 ## Constants
@@ -130,7 +130,7 @@ Every error of kind `"vmware"`.
 |---|---|
 | `cluster as string` | cluster id |
 | `name as string` | cluster name |
-| `haEnabled as bool` | vSphere HA is on |
+| `haEnabled as bool` | vSphere™ HA is on |
 | `drsEnabled as bool` | DRS is on |
 
 ### `Datastore`
@@ -312,7 +312,7 @@ Every error of kind `"vmware"`.
 |---|---|---|
 | `vmware.customizationSpecs(c)` | `list of Item` | the stored specs |
 | `vmware.customize(c, vm, specName)` | `null` | apply a stored spec at the next power-on |
-| `vmware.linuxSpec(lc)` | `json.Value` | a Linux spec, to change before `customizeWith` |
+| `vmware.linuxSpec(lc)` | `json.Value` | a Linux™ spec, to change before `customizeWith` |
 | `vmware.customizeWith(c, vm, spec)` | `null` | apply a spec given in full |
 | `vmware.customizeLinux(c, vm, lc)` | `null` | apply a Linux spec |
 
@@ -348,7 +348,7 @@ Every error of kind `"vmware"`.
 
 ## Inside the guest
 
-Needs VMware Tools running in the guest.
+Needs VMware™ Tools running in the guest.
 
 | Function | Returns | Does |
 |---|---|---|
@@ -363,7 +363,7 @@ Needs VMware Tools running in the guest.
 | Function | Returns | Does |
 |---|---|---|
 | `vmware.version(c)` | `Version` | the appliance's version |
-| `vmware.hosts(c)` | `list of Host` | the ESXi hosts |
+| `vmware.hosts(c)` | `list of Host` | the ESXi™ hosts |
 | `vmware.clusters(c)` | `list of Cluster` | the clusters |
 | `vmware.datastores(c)` | `list of Datastore` | the datastores |
 | `vmware.datacenters(c)` | `list of Item` | the datacenters |
