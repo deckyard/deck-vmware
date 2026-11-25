@@ -81,7 +81,7 @@ false means vCenter never got the request. Writes are never retried; `withRetrie
 
 ## Requirements
 
-Jennifer 0.27.0 or newer, default `jennifer` binary: the deck needs the `net`
+Jennifer 0.28.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks.
 
 ## Trademarks

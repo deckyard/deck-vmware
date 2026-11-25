@@ -54,7 +54,7 @@ $c = vmware.logout($c);
 
 ## Requirements
 
-Jennifer 0.27.0 or newer and the default `jennifer` binary: the deck needs
+Jennifer 0.28.0 or newer and the default `jennifer` binary: the deck needs
 the `net` capability, which `jennifer-tiny` lacks.
 
 ## Development

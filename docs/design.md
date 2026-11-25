@@ -110,7 +110,7 @@ Not in scope:
 
 ## Dependencies on the interpreter
 
-- Floor `jennifer >=0.27.0`; the default binary only. The tests use the
+- Floor `jennifer >=0.28.0` (the calls 0.29.0 removes are replaced by their 0.28.0 forms); the default binary only. The tests use the
   UTF-8 codecs of `encoding.encode` / `decode`, new in 0.27.0.
 - The bundled `http` (send, keep-alive connections with `http.connect` and
   `http.exchange`, TLS options, retries) and `uri` modules; `httpd` in the
